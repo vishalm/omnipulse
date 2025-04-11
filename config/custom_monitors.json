@@ -1,0 +1,22 @@
+{
+  "metrics": [
+    {
+      "name": "example_http_metric",
+      "type": "http",
+      "url": "http://localhost:8000/metrics",
+      "method": "GET",
+      "headers": {},
+      "interval": 60,
+      "timeout": 10,
+      "enabled": false
+    },
+    {
+      "name": "example_command_metric",
+      "type": "command",
+      "command": "echo '{\"value\": 123}'",
+      "parser": "json",
+      "interval": 60,
+      "enabled": false
+    }
+  ]
+}

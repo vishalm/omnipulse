@@ -1,0 +1,31 @@
+{
+  "ollama_api_url": "http://localhost:11434",
+  "system_monitor_interval": 32,
+  "system_disk_paths": [],
+  "system_network_interfaces": [],
+  "python_monitor_interval": 28,
+  "python_process_filter": [
+    "streamlit",
+    "jupyter",
+    "ollama",
+    "streamlit",
+    "streamlit.cli",
+    "jupyter",
+    "jupyter-notebook",
+    "jupyter-lab"
+  ],
+  "dashboard_theme": "light",
+  "dashboard_refresh_interval": 60,
+  "dashboard_default_time_range": "Last hour",
+  "custom_monitors_config_path": "config/custom_monitors.json",
+  "enable_authentication": false,
+  "auth_username": "",
+  "auth_password_hash": "",
+  "enable_alerts": false,
+  "alert_email": "",
+  "alert_thresholds": {
+    "cpu_percent": 90,
+    "memory_percent": 90,
+    "disk_percent": 90
+  }
+}

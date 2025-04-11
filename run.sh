@@ -34,7 +34,9 @@ if ! pip show streamlit > /dev/null; then
     echo -e "${BLUE}Streamlit not found. Installing...${NC}"
     pip install streamlit
 fi
+sed -i '' 's/from distutils import spawn/import shutil/; s/spawn.find_executable/shutil.which/g' venv/lib/python3.12/site-packages/GPUtil/GPUtil.py
 
 # Start dashboard
 echo -e "${GREEN}Starting OmniPulse dashboard...${NC}"
+
 streamlit run src/app.py "$@"

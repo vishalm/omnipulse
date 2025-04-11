@@ -26,6 +26,7 @@ OmniPulse is a comprehensive real-time monitoring dashboard built with Streamlit
 - **Request Analysis**: Visualize request patterns, token usage, and model distribution
 - **Error Monitoring**: Capture and analyze inference errors and timeouts
 - **Model Management**: Track model versions, downloads, and usage statistics
+![alt text](resources/images/OllamaMon.png)
 
 ### 🖥️ System Resource Monitoring
 - **CPU Analytics**: Real-time CPU utilization by core with historical trends
@@ -33,6 +34,8 @@ OmniPulse is a comprehensive real-time monitoring dashboard built with Streamlit
 - **Disk Performance**: Monitor I/O operations, disk usage, and read/write latency
 - **Network Activity**: Visualize bandwidth usage, connection counts, and packet metrics
 - **Temperature & Power**: Track thermal performance and power consumption (where supported)
+![alt text](resources/images/SystemMon.png)
+
 
 ### 🐍 Python Application Monitoring
 - **Process Tracking**: Monitor Python processes with resource usage details
@@ -40,6 +43,8 @@ OmniPulse is a comprehensive real-time monitoring dashboard built with Streamlit
 - **Performance Metrics**: Track execution time, thread counts, and file descriptors
 - **Error Logging**: Capture and visualize Python exceptions and errors
 - **Dependency Management**: Monitor installed packages and version conflicts
+![alt text](resources/images/PythonMon.png)
+
 
 ### 🛠️ Custom Metrics Framework
 - **API Integration**: Connect to external metrics sources with a flexible API
@@ -48,12 +53,16 @@ OmniPulse is a comprehensive real-time monitoring dashboard built with Streamlit
 - **Alert Configuration**: Set custom thresholds and notification rules
 - **Data Export**: Export metrics and visualizations for reporting
 
+![alt text](resources/images/CustomMon.png)
+
 ### ⚙️ Advanced Features
 - **Role-Based Access Control**: Secure your dashboard with multi-user authentication
 - **Dark/Light Themes**: Choose your preferred visual mode for comfortable viewing
 - **Responsive Design**: Access your dashboard from desktop or mobile devices
 - **Data Persistence**: Store historical metrics with configurable retention periods
 - **Notification System**: Receive alerts via email, webhook, or in-app notifications
+
+![alt text](resources/images/Settings.png)
 
 ## 🚀 Installation
 

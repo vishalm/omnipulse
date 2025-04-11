@@ -68,7 +68,7 @@ OmniPulse is a comprehensive real-time monitoring dashboard built with Streamlit
 #### Option 1: Quick Setup (Recommended)
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/omnipulse.git
+git clone https://github.com/vishalm/omnipulse.git
 cd omnipulse
 
 # Run the setup script
@@ -81,7 +81,7 @@ cd omnipulse
 #### Option 2: Manual Installation
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/omnipulse.git
+git clone https://github.com/vishalm/omnipulse.git
 cd omnipulse
 
 # Create virtual environment
@@ -244,7 +244,7 @@ omnipulse/
 ### Setting Up Development Environment
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/omnipulse.git
+git clone https://github.com/vishalm/omnipulse.git
 cd omnipulse
 
 # Create virtual environment
@@ -310,9 +310,9 @@ If you encounter any issues or have questions about OmniPulse, please open an is
 ---
 
 <div align="center">
-  <p>Built with ❤️ by <a href="https://github.com/yourusername">Your Team</a></p>
+  <p>Built with ❤️ by <a href="https://github.com/vishalm">Your Team</a></p>
   <p>
-    <a href="https://github.com/yourusername/omnipulse/stargazers">⭐ Star us on GitHub</a> •
-    <a href="https://twitter.com/yourusername">Follow us on Twitter</a>
+    <a href="https://github.com/vishalm/omnipulse/stargazers">⭐ Star us on GitHub</a> •
+    <a href="https://twitter.com/vishalm">Follow us on Twitter</a>
   </p>
 </div>

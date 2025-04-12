@@ -325,3 +325,64 @@ If you encounter any issues or have questions about OmniPulse, please open an is
     <a href="https://twitter.com/vishalm">Follow us on Twitter</a>
   </p>
 </div>
+
+
+## HACK for env for Python 3.12.0
+Perfect — here’s exactly what you need to do on your **MacBook running Python 3.12** to fix the `distutils` error caused by `GPUtil`.
+
+---
+
+### ✅ Step-by-Step Fix (Recommended): Patch `GPUtil` to replace `distutils`
+
+#### 🔧 1. Locate the problematic file
+```bash
+open venv/lib/python3.12/site-packages/GPUtil/GPUtil.py
+```
+
+Or open it manually in your editor:
+```
+/Users/vishal.mishra/workspace/self/omnipulse/venv/lib/python3.12/site-packages/GPUtil/GPUtil.py
+```
+
+#### 🔧 2. Edit the import
+
+**Replace this line:**
+```python
+from distutils import spawn
+```
+
+**With:**
+```python
+import shutil
+```
+
+#### 🔧 3. Update function calls
+
+**Replace:**
+```python
+spawn.find_executable("nvidia-smi")
+```
+
+**With:**
+```python
+shutil.which("nvidia-smi")
+```
+
+You may find multiple `spawn.find_executable()` calls — replace them all with `shutil.which()`.
+
+#### ✅ 4. Save and rerun your app
+You should now be able to run your code with Python 3.12 and `GPUtil` will work fine.
+
+---
+
+### 💡 Bonus: Want to automate this patch?
+
+Here's a quick terminal one-liner to auto-patch it:
+
+```bash
+sed -i '' 's/from distutils import spawn/import shutil/; s/spawn.find_executable/shutil.which/g' venv/lib/python3.12/site-packages/GPUtil/GPUtil.py
+```
+
+---
+
+Let me know if you want to downgrade to Python 3.11 with `pyenv` instead — happy to walk you through that too.

@@ -61,6 +61,22 @@ class OllamaMonitor:
         """Close the HTTP client."""
         await self.client.aclose()
     
+    def reset_client(self):
+        """Reset the HTTP client when it's in a bad state."""
+        try:
+            # Close the old client if it exists and is not already closed
+            if hasattr(self, 'client') and not self.client.is_closed:
+                # We can't await here so we need to create a new client
+                logger.info("Creating new HTTP client and abandoning old one")
+            
+            # Create a new client
+            self.client = httpx.AsyncClient(timeout=30.0)
+            logger.info("HTTP client reset successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Error resetting HTTP client: {str(e)}")
+            return False
+    
     async def get_models(self) -> List[Dict[str, Any]]:
         """
         Get list of available models from Ollama.
@@ -69,6 +85,11 @@ class OllamaMonitor:
             List of model information dictionaries
         """
         try:
+            # Check if the client is closed and recreate if needed
+            if self.client.is_closed:
+                logger.warning("HTTP client was closed, recreating it")
+                self.client = httpx.AsyncClient(timeout=30.0)
+                
             response = await self.client.get(f"{self.api_url}/api/tags")
             if response.status_code == 200:
                 models_data = response.json().get("models", [])
@@ -81,8 +102,27 @@ class OllamaMonitor:
             else:
                 logger.error(f"Failed to get models: {response.status_code} - {response.text}")
                 return []
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP error fetching models: {str(e)}")
+            return []
+        except asyncio.CancelledError as e:
+            logger.error(f"Async operation cancelled: {str(e)}")
+            return []
+        except asyncio.InvalidStateError as e:
+            logger.error(f"Invalid async state: {str(e)}")
+            # Recreate the client
+            try:
+                self.client = httpx.AsyncClient(timeout=30.0)
+                logger.info("Recreated HTTP client after invalid state error")
+            except Exception as inner_e:
+                logger.error(f"Failed to recreate HTTP client: {str(inner_e)}")
+            return []
         except Exception as e:
             logger.error(f"Error fetching models: {str(e)}")
+            # Try to reset the client in case of event loop issues
+            if "Event loop is closed" in str(e):
+                logger.warning("Detected closed event loop, attempting to reset client")
+                self.reset_client()
             return []
     
     async def get_model_info(self, model_name: str) -> Dict[str, Any]:
@@ -284,25 +324,56 @@ class OllamaMonitor:
         Returns:
             Dictionary with all metrics
         """
-        health = await self.perform_health_check()
+        # Check client state first
+        if not hasattr(self, 'client') or self.client.is_closed:
+            logger.warning("HTTP client is closed, resetting before collecting metrics")
+            self.reset_client()
         
-        if not health.get("healthy", False):
-            logger.warning("Ollama service is not healthy, skipping metrics collection")
+        try:
+            health = await self.perform_health_check()
+            
+            if not health.get("healthy", False):
+                logger.warning("Ollama service is not healthy, skipping metrics collection")
+                return {
+                    "health": health,
+                    "models": [],
+                    "system_metrics": None
+                }
+            
+            # Use individual try/except blocks to collect as much data as possible
+            models = []
+            try:
+                models = await self.get_models()
+            except Exception as e:
+                logger.error(f"Error collecting model data: {str(e)}")
+                if "Event loop is closed" in str(e):
+                    self.reset_client()
+            
+            system_metrics = None
+            try:
+                system_metrics = await self.collect_system_metrics()
+            except Exception as e:
+                logger.error(f"Error collecting system metrics: {str(e)}")
+                if "Event loop is closed" in str(e):
+                    self.reset_client()
+            
             return {
+                "timestamp": datetime.now().isoformat(),
                 "health": health,
+                "models": models,
+                "system_metrics": system_metrics
+            }
+        except Exception as e:
+            logger.error(f"Error in collect_all_metrics: {str(e)}")
+            # Reset client on connection or event loop errors
+            if isinstance(e, (httpx.HTTPError, ConnectionError)) or "Event loop is closed" in str(e):
+                self.reset_client()
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "health": {"healthy": False, "error": str(e)},
                 "models": [],
                 "system_metrics": None
             }
-        
-        models = await self.get_models()
-        system_metrics = await self.collect_system_metrics()
-        
-        return {
-            "timestamp": datetime.now().isoformat(),
-            "health": health,
-            "models": models,
-            "system_metrics": system_metrics
-        }
     
     def get_performance_stats(self, time_range: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -501,9 +572,35 @@ class OllamaMonitor:
         """
         while True:
             try:
+                # Check client state before making requests
+                if not hasattr(self, 'client') or self.client.is_closed:
+                    logger.warning("HTTP client is closed, resetting before collecting metrics")
+                    self.reset_client()
+                
+                # Collect metrics
                 await self.collect_all_metrics()
                 logger.info(f"Collected Ollama metrics successfully")
+            except asyncio.CancelledError:
+                logger.warning("Background monitoring task cancelled")
+                break
+            except asyncio.InvalidStateError:
+                logger.error("Invalid async state in background monitoring, resetting client")
+                self.reset_client()
             except Exception as e:
                 logger.error(f"Error in background monitoring: {str(e)}")
+                # Try to reset client on errors
+                if isinstance(e, (httpx.HTTPError, ConnectionError)) or "Event loop is closed" in str(e):
+                    logger.info("Connection-related error, resetting client")
+                    self.reset_client()
             
-            await asyncio.sleep(interval)
+            # Sleep between collections
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                logger.warning("Sleep interrupted, exiting background task")
+                break
+            except Exception as e:
+                logger.error(f"Error during sleep: {str(e)}")
+                # Use a regular sleep if asyncio.sleep fails
+                import time
+                time.sleep(interval)

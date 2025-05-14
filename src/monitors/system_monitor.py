@@ -421,58 +421,109 @@ class SystemMonitor:
         """
         try:
             current_time = time.time()
-            net_io_counters = psutil.net_io_counters(pernic=True)
+            
+            try:
+                net_io_counters = psutil.net_io_counters(pernic=True)
+            except Exception as e:
+                logger.warning(f"Unable to get network IO counters: {str(e)}")
+                net_io_counters = {}
+            
+            try:
+                connections_count = len(psutil.net_connections())
+            except Exception as e:
+                logger.warning(f"Unable to get network connections: {str(e)}")
+                connections_count = 0
             
             metrics = {
                 "timestamp": datetime.now().isoformat(),
                 "interfaces": {},
-                "connections_count": len(psutil.net_connections()),
+                "connections_count": connections_count,
             }
             
             # Process each monitored interface
             for interface in self.network_interfaces:
+                # Default metrics in case we can't get actual data
+                interface_metrics = {
+                    "bytes_sent": 0,
+                    "bytes_recv": 0,
+                    "packets_sent": 0,
+                    "packets_recv": 0,
+                    "errin": 0,
+                    "errout": 0,
+                    "dropin": 0,
+                    "dropout": 0,
+                    "send_rate_bytes_per_sec": 0,
+                    "recv_rate_bytes_per_sec": 0,
+                }
+                
+                # Try to get actual network data if available
                 if interface in net_io_counters:
-                    counters = net_io_counters[interface]
-                    
-                    interface_metrics = {
-                        "bytes_sent": counters.bytes_sent,
-                        "bytes_recv": counters.bytes_recv,
-                        "packets_sent": counters.packets_sent,
-                        "packets_recv": counters.packets_recv,
-                        "errin": counters.errin,
-                        "errout": counters.errout,
-                        "dropin": counters.dropin,
-                        "dropout": counters.dropout,
-                    }
-                    
-                    # Calculate throughput if we have previous measurements
-                    if (self.last_network_io is not None and 
-                        self.last_network_time is not None and 
-                        interface in self.last_network_io):
+                    try:
+                        counters = net_io_counters[interface]
                         
-                        time_diff = current_time - self.last_network_time
-                        last_counters = self.last_network_io[interface]
+                        interface_metrics.update({
+                            "bytes_sent": counters.bytes_sent,
+                            "bytes_recv": counters.bytes_recv,
+                            "packets_sent": counters.packets_sent,
+                            "packets_recv": counters.packets_recv,
+                            "errin": counters.errin,
+                            "errout": counters.errout,
+                            "dropin": counters.dropin,
+                            "dropout": counters.dropout,
+                        })
                         
-                        # Only calculate if time difference is significant to avoid division by zero
-                        if time_diff > 0.1:
-                            bytes_sent_diff = counters.bytes_sent - last_counters.bytes_sent
-                            bytes_recv_diff = counters.bytes_recv - last_counters.bytes_recv
+                        # Calculate throughput if we have previous measurements
+                        if (self.last_network_io is not None and 
+                            self.last_network_time is not None and 
+                            interface in self.last_network_io):
                             
-                            interface_metrics["send_rate_bytes_per_sec"] = round(bytes_sent_diff / time_diff, 2)
-                            interface_metrics["recv_rate_bytes_per_sec"] = round(bytes_recv_diff / time_diff, 2)
-                    
-                    metrics["interfaces"][interface] = interface_metrics
+                            time_diff = current_time - self.last_network_time
+                            last_counters = self.last_network_io[interface]
+                            
+                            # Only calculate if time difference is significant to avoid division by zero
+                            if time_diff > 0.1:
+                                bytes_sent_diff = counters.bytes_sent - last_counters.bytes_sent
+                                bytes_recv_diff = counters.bytes_recv - last_counters.bytes_recv
+                                
+                                # Handle potential negative values (counter resets)
+                                if bytes_sent_diff >= 0:
+                                    interface_metrics["send_rate_bytes_per_sec"] = round(bytes_sent_diff / time_diff, 2)
+                                if bytes_recv_diff >= 0:
+                                    interface_metrics["recv_rate_bytes_per_sec"] = round(bytes_recv_diff / time_diff, 2)
+                    except Exception as e:
+                        logger.warning(f"Error processing interface {interface} metrics: {str(e)}")
+                
+                metrics["interfaces"][interface] = interface_metrics
             
-            # Store current values for next calculation
-            self.last_network_io = net_io_counters
-            self.last_network_time = current_time
+            # If we have no interfaces with data, try to detect active interfaces again
+            if not metrics["interfaces"] and platform.system() != "Darwin":  # Skip auto-detection on macOS
+                try:
+                    updated_interfaces = self._detect_network_interfaces()
+                    if updated_interfaces:
+                        self.network_interfaces = updated_interfaces
+                        logger.info(f"Updated network interfaces to: {self.network_interfaces}")
+                except Exception as e:
+                    logger.warning(f"Failed to re-detect network interfaces: {str(e)}")
+            
+            # Store current values for next calculation if available
+            if net_io_counters:
+                self.last_network_io = net_io_counters
+                self.last_network_time = current_time
             
             self.network_history.append(metrics)
             return metrics
         
         except Exception as e:
-            logger.error(f"Error collecting network metrics: {str(e)}")
-            return {"error": str(e)}
+            logger.error(f"Error collecting network metrics: {e}", exc_info=True)
+            # Return a minimal valid data structure even on error
+            metrics = {
+                "timestamp": datetime.now().isoformat(),
+                "interfaces": {},
+                "connections_count": 0,
+                "error": str(e)
+            }
+            self.network_history.append(metrics)
+            return metrics
     
     def collect_gpu_metrics(self) -> Optional[Dict[str, Any]]:
         """

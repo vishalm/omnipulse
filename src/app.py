@@ -21,6 +21,44 @@ from src.monitors.ollama_monitor import OllamaMonitor
 from src.monitors.system_monitor import SystemMonitor
 from src.monitors.python_monitor import PythonMonitor
 from src.monitors.custom_monitor import CustomMonitor
+from src.utils.visualization import apply_theme_to_figures
+
+
+# Function to run async code safely in Streamlit
+def run_async(async_func, *args, **kwargs):
+    """Run an async function from a synchronous context."""
+    try:
+        # Check if there's already a running event loop
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                # If the loop is closed, create a new one
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            # If there is no current event loop, create one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Run the async function
+        return loop.run_until_complete(async_func(*args, **kwargs))
+    except Exception as e:
+        error_msg = str(e)
+        st.error(f"Error in async operation: {error_msg}")
+        
+        # If the error is related to event loop closure, provide more detailed error
+        if "Event loop is closed" in error_msg:
+            st.warning("Event loop closure detected. Attempting to recover...")
+        
+        # If the first arg is an OllamaMonitor, try to reset its client
+        if args and hasattr(args[0], 'reset_client') and callable(args[0].reset_client):
+            reset_success = args[0].reset_client()
+            if reset_success:
+                st.info("Client reset successful. Please try again.")
+            else:
+                st.error("Client reset failed. You may need to refresh the page.")
+        
+        return None
 
 
 # Initialize monitors
@@ -55,6 +93,9 @@ def main():
         initial_sidebar_state="expanded",
     )
     
+    # Initialize visualization themes
+    apply_theme_to_figures()
+    
     # Apply custom styling
     apply_custom_styles()
     
@@ -74,7 +115,8 @@ def main():
     
     # Render selected dashboard
     if selected_dashboard == "Ollama LLM":
-        asyncio.run(ollama_dashboard.render_dashboard(monitors["ollama"], get_time_range()))
+        # Use run_async instead of asyncio.run to prevent event loop closure
+        run_async(ollama_dashboard.render_dashboard, monitors["ollama"], get_time_range())
     elif selected_dashboard == "System":
         system_dashboard.render_dashboard(monitors["system"], get_time_range())
     elif selected_dashboard == "Python":
@@ -359,7 +401,7 @@ def render_settings_page(monitors):
         if st.button("Test Ollama Connection"):
             with st.spinner("Testing connection..."):
                 try:
-                    result = asyncio.run(monitors["ollama"].perform_health_check())
+                    result = run_async(monitors["ollama"].perform_health_check)
                     
                     if result.get("healthy", False):
                         st.success("✅ Connection successful! Ollama service is running.")

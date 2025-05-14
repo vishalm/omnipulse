@@ -63,6 +63,50 @@ CHART_TEMPLATE = {
     }
 }
 
+# Apply global theme at import time
+def apply_theme_to_figures():
+    """
+    Apply global theme settings to all Plotly figures.
+    This function should be called at the beginning of the application
+    to ensure consistent styling across all visualizations.
+    """
+    import plotly.io as pio
+    
+    # Create a custom template based on our styling
+    template = go.layout.Template(
+        layout=go.Layout(
+            font=dict(family='Roboto, Arial, sans-serif', color=COLORS['text']),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(t=30, r=10, b=40, l=50),
+            xaxis=dict(
+                gridcolor=COLORS['grid'],
+                zerolinecolor=COLORS['grid'],
+                tickfont=dict(size=10)
+            ),
+            yaxis=dict(
+                gridcolor=COLORS['grid'],
+                zerolinecolor=COLORS['grid'],
+                tickfont=dict(size=10)
+            ),
+            legend=dict(
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='right',
+                x=1
+            ),
+            colorway=COLORS['chart_palette']
+        )
+    )
+    
+    # Register the template and set as default
+    pio.templates["omnipulse"] = template
+    pio.templates.default = "omnipulse"
+
+# Apply the theme immediately upon module import
+apply_theme_to_figures()
+
 def format_number(value: float, precision: int = 1, unit: str = '') -> str:
     """
     Format a number with appropriate suffixes (K, M, G, T) and optional unit.
@@ -203,9 +247,21 @@ def create_line_chart(
     if colors is None:
         colors = COLORS['chart_palette']
     
+    # Ensure data is sorted by x_column for proper line rendering
+    if x_column in data.columns:
+        data = data.sort_values(by=x_column)
+    
     fig = go.Figure()
     
+    # Check if x axis is datetime
+    is_datetime = False
+    if x_column in data.columns and data[x_column].dtype in ['datetime64[ns]', '<M8[ns]']:
+        is_datetime = True
+    
     for i, y_column in enumerate(y_columns):
+        if y_column not in data.columns:
+            continue
+            
         color = colors[i % len(colors)]
         
         if area:
@@ -218,6 +274,7 @@ def create_line_chart(
                     line=dict(width=2, color=color, shape=line_shape),
                     fill='tozeroy',
                     fillcolor=f'rgba{tuple(list(px.colors.hex_to_rgb(color)) + [0.2])}',
+                    hovertemplate=f"{y_column.replace('_', ' ').title()}: %{{y}}<extra></extra>",
                 )
             )
         else:
@@ -227,7 +284,8 @@ def create_line_chart(
                     y=data[y_column],
                     name=y_column.replace('_', ' ').title(),
                     mode=mode,
-                    line=dict(width=2, color=color, shape=line_shape)
+                    line=dict(width=2, color=color, shape=line_shape),
+                    hovertemplate=f"{y_column.replace('_', ' ').title()}: %{{y}}<extra></extra>",
                 )
             )
     
@@ -235,10 +293,10 @@ def create_line_chart(
     fig.update_layout(
         title=title,
         height=height,
-        template=CHART_TEMPLATE,
         showlegend=legend,
         xaxis_title=x_title,
         yaxis_title=y_title,
+        hovermode="x unified",
     )
     
     # Format y-axis ticks if formatter provided
@@ -246,7 +304,7 @@ def create_line_chart(
         fig.update_yaxes(tickformat=y_format)
     
     # Add range selector for time series
-    if range_selector and data[x_column].dtype in ['datetime64[ns]', '<M8[ns]']:
+    if range_selector and is_datetime:
         fig.update_layout(
             xaxis=dict(
                 rangeselector=dict(
@@ -255,8 +313,11 @@ def create_line_chart(
                         dict(count=1, label="1h", step="hour", stepmode="backward"),
                         dict(count=6, label="6h", step="hour", stepmode="backward"),
                         dict(count=1, label="1d", step="day", stepmode="backward"),
-                        dict(step="all")
-                    ])
+                        dict(step="all", label="All")
+                    ]),
+                    bgcolor=COLORS['background'],
+                    activecolor=COLORS['primary'],
+                    font=dict(color=COLORS['text'])
                 ),
                 rangeslider=dict(visible=False),
                 type="date"
@@ -300,38 +361,54 @@ def create_bar_chart(
     if color is None:
         color = COLORS['primary']
     
-    if sort:
-        data = data.sort_values(y_column)
+    # Make a copy to avoid modifying the original dataframe
+    plot_data = data.copy()
+    
+    # Check if columns exist
+    if x_column not in plot_data.columns or y_column not in plot_data.columns:
+        # Handle missing columns by creating an empty dataframe with the required columns
+        plot_data = pd.DataFrame({x_column: [], y_column: []})
+    elif sort:
+        plot_data = plot_data.sort_values(y_column)
+    
+    # For categorical data, ensure proper ordering
+    if x_column in plot_data.columns and plot_data[x_column].dtype == 'object':
+        # Use category dtype with defined order to prevent alphabetical sorting
+        if not plot_data.empty:
+            plot_data[x_column] = pd.Categorical(
+                plot_data[x_column],
+                categories=plot_data[x_column].unique()
+            )
     
     if horizontal:
         fig = px.bar(
-            data, 
+            plot_data, 
             y=x_column, 
             x=y_column, 
             title=title,
-            color=color if isinstance(color, str) and color in data.columns else None,
+            color=color if isinstance(color, str) and color in plot_data.columns else None,
             color_discrete_map=color_discrete_map,
             height=height,
-            template=CHART_TEMPLATE
+            text_auto='.2s' if not plot_data.empty and plot_data[y_column].max() > 1000 else True
         )
         
         # If color is a string but not a column name, set the bar color
-        if isinstance(color, str) and color not in data.columns:
+        if isinstance(color, str) and color not in plot_data.columns:
             fig.update_traces(marker_color=color)
     else:
         fig = px.bar(
-            data, 
+            plot_data, 
             x=x_column, 
             y=y_column, 
             title=title,
-            color=color if isinstance(color, str) and color in data.columns else None,
+            color=color if isinstance(color, str) and color in plot_data.columns else None,
             color_discrete_map=color_discrete_map,
             height=height,
-            template=CHART_TEMPLATE
+            text_auto='.2s' if not plot_data.empty and plot_data[y_column].max() > 1000 else True
         )
         
         # If color is a string but not a column name, set the bar color
-        if isinstance(color, str) and color not in data.columns:
+        if isinstance(color, str) and color not in plot_data.columns:
             fig.update_traces(marker_color=color)
     
     # Customize layout
@@ -339,6 +416,14 @@ def create_bar_chart(
         xaxis_title=x_title,
         yaxis_title=y_title,
         bargap=0.2,
+        hovermode="closest"
+    )
+    
+    # Improve text display when using text labels
+    fig.update_traces(
+        textposition='auto', 
+        textangle=0,
+        textfont_size=10
     )
     
     return fig
@@ -553,32 +638,65 @@ def create_heatmap(
     Returns:
         Plotly figure object
     """
+    # Make a copy to avoid modifying the original dataframe
+    plot_data = data.copy()
+    
+    # Check if necessary columns exist
+    if not all(col in plot_data.columns for col in [x_column, y_column, z_column]):
+        # Return an empty heatmap with a message
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No data available for heatmap",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False
+        )
+        fig.update_layout(height=height, title=title)
+        return fig
+    
     # Pivot data for heatmap format if needed
-    if len(data[[x_column, y_column, z_column]].drop_duplicates()) == len(data):
+    if len(plot_data[[x_column, y_column, z_column]].drop_duplicates()) == len(plot_data):
         # Data is in long format, need to pivot
-        pivot_data = data.pivot(index=y_column, columns=x_column, values=z_column)
+        try:
+            pivot_data = plot_data.pivot(index=y_column, columns=x_column, values=z_column)
+        except ValueError:
+            # Handle duplicate entries by taking the mean
+            pivot_data = plot_data.pivot_table(
+                index=y_column, 
+                columns=x_column, 
+                values=z_column,
+                aggfunc='mean'
+            )
     else:
         # Data is already in the right format
-        pivot_data = data
+        pivot_data = plot_data
     
+    # Create the heatmap
     fig = go.Figure(data=go.Heatmap(
         z=pivot_data.values,
         x=pivot_data.columns,
         y=pivot_data.index,
         colorscale=colorscale,
         showscale=showscale,
+        hovertemplate='%{y} - %{x}: %{z}<extra></extra>',
+        colorbar=dict(
+            title=z_column.replace('_', ' ').title(),
+            titleside='right',
+            titlefont=dict(size=12),
+            tickfont=dict(size=10)
+        )
     ))
     
     # Customize layout
     fig.update_layout(
         title=title,
         height=height,
-        xaxis_title=x_title,
-        yaxis_title=y_title,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font={'family': 'Roboto, Arial, sans-serif', 'color': COLORS['text']},
+        xaxis_title=x_title if x_title else x_column.replace('_', ' ').title(),
+        yaxis_title=y_title if y_title else y_column.replace('_', ' ').title(),
         margin=dict(l=50, r=50, t=50, b=50),
+        xaxis=dict(
+            side='bottom',
+            tickangle=-45 if len(pivot_data.columns) > 5 else 0
+        )
     )
     
     return fig
@@ -950,7 +1068,8 @@ def create_comparison_chart(
 def create_grid_dashboard(
     charts: List[Tuple[str, go.Figure]],
     n_columns: int = 2,
-    height_ratios: List[float] = None
+    height_ratios: List[float] = None,
+    container_height: str = None
 ) -> None:
     """
     Create a grid layout dashboard with multiple charts.
@@ -959,10 +1078,38 @@ def create_grid_dashboard(
         charts: List of (chart_id, chart_figure) tuples
         n_columns: Number of columns in the grid
         height_ratios: Optional list of relative heights for each row
+        container_height: Optional height for each chart container (CSS value)
     """
+    # Safety check
+    if not charts:
+        st.warning("No charts provided to display in grid dashboard.")
+        return
+    
     # Calculate number of rows needed
     n_charts = len(charts)
     n_rows = (n_charts + n_columns - 1) // n_columns  # Ceiling division
+    
+    # Validate height_ratios
+    if height_ratios and len(height_ratios) != n_rows:
+        st.warning(f"Number of height ratios ({len(height_ratios)}) doesn't match number of rows ({n_rows}). Using equal heights.")
+        height_ratios = None
+    
+    # Normalize height ratios if provided
+    if height_ratios:
+        total = sum(height_ratios)
+        height_ratios = [h/total for h in height_ratios]
+    
+    # Create CSS for fixed height containers if specified
+    if container_height:
+        st.markdown(f"""
+        <style>
+        .chart-container {{
+            height: {container_height};
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }}
+        </style>
+        """, unsafe_allow_html=True)
     
     # Create rows
     for i in range(n_rows):
@@ -976,8 +1123,14 @@ def create_grid_dashboard(
                 chart_id, chart = charts[chart_idx]
                 
                 with cols[j]:
-                    st.plotly_chart(chart, use_container_width=True, key=chart_id)
-    
+                    # If container height specified, wrap in a div
+                    if container_height:
+                        st.markdown(f'<div class="chart-container">', unsafe_allow_html=True)
+                        st.plotly_chart(chart, use_container_width=True, key=chart_id)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    else:
+                        st.plotly_chart(chart, use_container_width=True, key=chart_id)
+
 def create_multi_axis_chart(
     data: pd.DataFrame,
     x_column: str,
@@ -1230,19 +1383,52 @@ def create_distribution_chart(
     if color is None:
         color = COLORS['primary']
     
+    # Make a copy to avoid modifying the original dataframe
+    plot_data = data.copy()
+    
+    # Check if value column exists
+    if value_column not in plot_data.columns or plot_data.empty:
+        # Return an empty histogram with a message
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No data available for distribution chart",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False
+        )
+        fig.update_layout(height=height, title=title)
+        return fig
+    
+    # Drop NaNs from the value column
+    plot_data = plot_data.dropna(subset=[value_column])
+    
+    # Determine appropriate bin size
+    if len(plot_data) > 0:
+        values = plot_data[value_column].values
+        # Use Freedman-Diaconis rule to determine bin width if we have enough data
+        if len(values) > 30:
+            q75, q25 = np.percentile(values, [75, 25])
+            iqr = q75 - q25
+            if iqr > 0:
+                bin_width = 2 * iqr / (len(values) ** (1/3))
+                data_range = values.max() - values.min()
+                if data_range > 0 and bin_width > 0:
+                    nbins = int(min(nbins, np.ceil(data_range / bin_width)))
+    
     # Create histogram
     fig = px.histogram(
-        data,
+        plot_data,
         x=value_column,
         nbins=nbins,
         title=title,
         height=height,
-        color_discrete_sequence=[color]
+        color_discrete_sequence=[color],
+        histnorm='',  # Can be 'percent', 'probability', 'density', 'probability density'
+        opacity=0.8
     )
     
     # Calculate statistics
-    if show_stats and len(data) > 0:
-        values = data[value_column].dropna()
+    if show_stats and len(plot_data) > 0:
+        values = plot_data[value_column].dropna()
         
         if len(values) > 0:
             stats = {
@@ -1250,7 +1436,8 @@ def create_distribution_chart(
                 'Median': values.median(),
                 'Std Dev': values.std(),
                 'Min': values.min(),
-                'Max': values.max()
+                'Max': values.max(),
+                'Count': len(values)
             }
             
             # Add vertical lines for mean and median
@@ -1270,8 +1457,30 @@ def create_distribution_chart(
                 annotation_position="top left"
             )
             
+            # Add KDE curve for smooth distribution visualization
+            try:
+                from scipy import stats as scipy_stats
+                if len(values) > 3:  # Need at least 3 points for KDE
+                    kde_x = np.linspace(values.min(), values.max(), 100)
+                    kde = scipy_stats.gaussian_kde(values)
+                    kde_y = kde(kde_x) * len(values) * (values.max() - values.min()) / nbins
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=kde_x,
+                            y=kde_y,
+                            mode='lines',
+                            line=dict(color=COLORS['tertiary'], width=2),
+                            name='Density'
+                        )
+                    )
+            except (ImportError, ValueError):
+                # Skip KDE if scipy not available or if KDE fails
+                pass
+            
             # Add stats annotation
-            stats_text = "<br>".join([f"{k}: {v:.2f}" for k, v in stats.items()])
+            stats_text = "<br>".join([f"{k}: {v:.2f}" for k, v in stats.items() if k != 'Count'])
+            stats_text += f"<br>Count: {stats['Count']}"
             
             fig.add_annotation(
                 xref="paper",
@@ -1290,22 +1499,9 @@ def create_distribution_chart(
     
     # Customize layout
     fig.update_layout(
-        template=CHART_TEMPLATE,
         xaxis_title=value_column.replace('_', ' ').title(),
         yaxis_title="Frequency",
         bargap=0.1
     )
     
     return fig
-
-def apply_theme_to_figures():
-    """
-    Apply global theme settings to all Plotly figures.
-    """
-    import plotly.io as pio
-    
-    pio.templates["omnipulse"] = go.layout.Template(
-        layout=CHART_TEMPLATE['layout']
-    )
-    
-    pio.templates.default = "omnipulse"

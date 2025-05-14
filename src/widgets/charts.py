@@ -7,6 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
+import numpy as np
 from typing import List, Dict, Any, Optional, Union, Tuple
 
 
@@ -45,25 +46,80 @@ def render_time_series(
     if isinstance(y_columns, str):
         y_columns = [y_columns]
     
+    # Safety check for empty data or missing columns
+    if df is None or df.empty or x_column not in df.columns:
+        fig = go.Figure()
+        fig.update_layout(
+            title=title,
+            height=height,
+            annotations=[
+                {
+                    "text": "No data available",
+                    "xref": "paper",
+                    "yref": "paper",
+                    "showarrow": False,
+                    "font": {
+                        "size": 16
+                    },
+                    "x": 0.5,
+                    "y": 0.5
+                }
+            ]
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        return fig
+    
+    # Filter out y_columns that don't exist in the dataframe
+    valid_y_columns = [col for col in y_columns if col in df.columns]
+    
+    if not valid_y_columns:
+        fig = go.Figure()
+        fig.update_layout(
+            title=title,
+            height=height,
+            annotations=[
+                {
+                    "text": "No valid Y columns found",
+                    "xref": "paper",
+                    "yref": "paper",
+                    "showarrow": False,
+                    "font": {
+                        "size": 16
+                    },
+                    "x": 0.5,
+                    "y": 0.5
+                }
+            ]
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        return fig
+    
+    # Sort data by x_column to ensure line continuity
+    plot_df = df.sort_values(by=x_column)
+    
     # Create figure
     if area:
         fig = px.area(
-            df,
+            plot_df,
             x=x_column,
-            y=y_columns,
+            y=valid_y_columns,
             title=title,
             labels=custom_labels,
             color_discrete_sequence=color_sequence
         )
     else:
         fig = px.line(
-            df,
+            plot_df,
             x=x_column,
-            y=y_columns,
+            y=valid_y_columns,
             title=title,
             labels=custom_labels,
             color_discrete_sequence=color_sequence
         )
+    
+    # Apply custom hover template for better readability
+    for trace in fig.data:
+        trace.hovertemplate = '%{y}<extra></extra>'
     
     # Update layout
     fig.update_layout(
@@ -84,7 +140,7 @@ def render_time_series(
         fig.update_yaxes(title_text=y_axis_title)
     
     # Enable stacking if requested
-    if stack and len(y_columns) > 1:
+    if stack and len(valid_y_columns) > 1:
         fig.update_layout(stackgroup='one')
     
     # Add range slider if requested
@@ -92,7 +148,7 @@ def render_time_series(
         fig.update_layout(
             xaxis=dict(
                 rangeslider=dict(visible=True),
-                type="date"
+                type="date" if pd.api.types.is_datetime64_any_dtype(plot_df[x_column]) else None
             )
         )
     
@@ -137,35 +193,102 @@ def render_bar_chart(
     if isinstance(y_columns, str):
         y_columns = [y_columns]
     
+    # Safety check for empty data or missing columns
+    if df is None or df.empty or x_column not in df.columns:
+        fig = go.Figure()
+        fig.update_layout(
+            title=title,
+            height=height,
+            annotations=[
+                {
+                    "text": "No data available",
+                    "xref": "paper",
+                    "yref": "paper",
+                    "showarrow": False,
+                    "font": {
+                        "size": 16
+                    },
+                    "x": 0.5,
+                    "y": 0.5
+                }
+            ]
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        return fig
+    
+    # Filter out y_columns that don't exist in the dataframe
+    valid_y_columns = [col for col in y_columns if col in df.columns]
+    
+    if not valid_y_columns:
+        fig = go.Figure()
+        fig.update_layout(
+            title=title,
+            height=height,
+            annotations=[
+                {
+                    "text": "No valid Y columns found",
+                    "xref": "paper",
+                    "yref": "paper",
+                    "showarrow": False,
+                    "font": {
+                        "size": 16
+                    },
+                    "x": 0.5,
+                    "y": 0.5
+                }
+            ]
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        return fig
+    
     # Sort dataframe if requested
     plot_df = df.copy()
-    if sort_values and len(y_columns) == 1:
-        plot_df = plot_df.sort_values(by=y_columns[0], ascending=sort_ascending)
+    if sort_values and len(valid_y_columns) == 1:
+        plot_df = plot_df.sort_values(by=valid_y_columns[0], ascending=sort_ascending)
+    
+    # Handle text display
+    text_auto_value = text_auto
+    if text_auto and not isinstance(text_auto, str):
+        # Auto-format text based on value range
+        max_val = plot_df[valid_y_columns[0]].max() if len(valid_y_columns) > 0 else 0
+        if max_val > 10000:
+            text_auto_value = '.1s'  # Abbreviated format for large numbers
+        elif max_val > 100:
+            text_auto_value = '.0f'  # No decimals for medium numbers
+        else:
+            text_auto_value = '.2f'  # 2 decimals for small numbers
     
     # Create figure
     if horizontal:
         fig = px.bar(
             plot_df,
             y=x_column,
-            x=y_columns,
+            x=valid_y_columns,
             title=title,
             labels=custom_labels,
             color_discrete_sequence=color_sequence,
             orientation='h',
             barmode='stack' if stacked else 'group',
-            text_auto=text_auto
+            text_auto=text_auto_value
         )
     else:
         fig = px.bar(
             plot_df,
             x=x_column,
-            y=y_columns,
+            y=valid_y_columns,
             title=title,
             labels=custom_labels,
             color_discrete_sequence=color_sequence,
             barmode='stack' if stacked else 'group',
-            text_auto=text_auto
+            text_auto=text_auto_value
         )
+    
+    # Fine-tune text presentation for better readability
+    if text_auto:
+        if horizontal:
+            fig.update_traces(textposition='auto', textangle=0, insidetextanchor='middle')
+        else:
+            fig.update_traces(textposition='outside', textangle=0)
     
     # Update layout
     fig.update_layout(
@@ -177,8 +300,13 @@ def render_bar_chart(
             y=-0.3,
             xanchor="center",
             x=0.5
-        )
+        ),
+        hovermode="closest"
     )
+    
+    # Rotate x-axis labels if needed for better readability
+    if not horizontal and len(plot_df[x_column].unique()) > 5:
+        fig.update_layout(xaxis_tickangle=-45)
     
     # Display the chart
     st.plotly_chart(fig, use_container_width=True)
@@ -213,10 +341,78 @@ def render_pie_chart(
         show_legend: Whether to show the legend
         sort_values: Whether to sort slices by values
     """
+    # Safety check for empty data or missing columns
+    if df is None or df.empty or names_column not in df.columns or values_column not in df.columns:
+        fig = go.Figure()
+        fig.update_layout(
+            title=title,
+            height=height,
+            annotations=[
+                {
+                    "text": "No data available",
+                    "xref": "paper",
+                    "yref": "paper",
+                    "showarrow": False,
+                    "font": {
+                        "size": 16
+                    },
+                    "x": 0.5,
+                    "y": 0.5
+                }
+            ]
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        return fig
+    
+    # Drop rows with null values
+    plot_df = df.dropna(subset=[names_column, values_column]).copy()
+    
+    # Check for any remaining data after filtering
+    if plot_df.empty or plot_df[values_column].sum() == 0:
+        fig = go.Figure()
+        fig.update_layout(
+            title=title,
+            height=height,
+            annotations=[
+                {
+                    "text": "No valid data for pie chart",
+                    "xref": "paper",
+                    "yref": "paper",
+                    "showarrow": False,
+                    "font": {
+                        "size": 16
+                    },
+                    "x": 0.5,
+                    "y": 0.5
+                }
+            ]
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        return fig
+    
+    # Group by names and sum values in case of duplicates
+    plot_df = plot_df.groupby(names_column)[values_column].sum().reset_index()
+    
     # Sort dataframe if requested
-    plot_df = df.copy()
     if sort_values:
         plot_df = plot_df.sort_values(by=values_column, ascending=False)
+    
+    # Limit the number of slices to improve readability
+    max_slices = 8
+    if len(plot_df) > max_slices:
+        # Keep top N-1 values and group the rest as "Other"
+        top_df = plot_df.iloc[:max_slices-1]
+        other_value = plot_df.iloc[max_slices-1:][values_column].sum()
+        
+        # Only add "Other" category if it has a non-zero value
+        if other_value > 0:
+            other_df = pd.DataFrame({
+                names_column: ["Other"],
+                values_column: [other_value]
+            })
+            plot_df = pd.concat([top_df, other_df], ignore_index=True)
+        else:
+            plot_df = top_df
     
     # Create figure
     fig = px.pie(
@@ -241,7 +437,14 @@ def render_pie_chart(
     fig.update_layout(
         height=height,
         margin=dict(t=30, b=30, l=30, r=30),
-        showlegend=show_legend
+        showlegend=show_legend,
+        legend=dict(
+            orientation="h" if len(plot_df) <= 5 else "v",
+            yanchor="top",
+            y=1.1 if len(plot_df) <= 5 else 1.0,
+            xanchor="center",
+            x=0.5 if len(plot_df) <= 5 else 1.0
+        )
     )
     
     # Display the chart
